@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Smart Park Prototyp</title>
+  <link href="./style.css" rel="stylesheet">
+  <!-- Import Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col relative bg-background">
+
+  <!-- Header -->
+  <header class="pt-12 pb-4 px-6 flex justify-between items-center z-10 relative">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight text-white">Smart Park</h1>
+      <div class="flex items-center gap-2 mt-1">
+        <div id="gps-status-dot" class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
+        <p id="gps-location-text" class="text-xs text-textMuted font-medium">Söker position...</p>
+      </div>
+    </div>
+  </header>
+
+  <input type="file" id="camera-input" accept="image/*" capture="environment" class="hidden">
+
+  <!-- View: Dashboard -->
+  <main id="view-dashboard" class="flex-1 flex flex-col relative px-6 pb-24 view-enter overflow-y-auto">
+    <!-- Big Scan CTA -->
+    <button id="btn-dashboard-scan" class="w-full relative overflow-hidden rounded-3xl bg-primary text-white p-8 shadow-lg shadow-primary/30 flex flex-col items-center justify-center gap-4 mb-8 active:scale-[0.98] transition-transform">
+      <div class="absolute -right-10 -top-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mb-2 z-10">
+        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      <span class="text-2xl font-bold tracking-tight z-10">Scanna P-skylt</span>
+      <span class="text-white/80 font-medium z-10">AI-tolka regler & taxa direkt</span>
+    </button>
+
+    <!-- Payment Apps Section -->
+    <h3 class="text-sm font-semibold text-textMuted uppercase tracking-wider mb-4">Betalappar för zonen</h3>
+    <div class="grid grid-cols-2 gap-3 mb-8">
+      <a href="#" class="glass-panel p-4 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-transform">
+        <div class="w-10 h-10 rounded-full bg-pink-500 flex items-center justify-center text-white font-bold text-xs">PS</div>
+        <span class="font-semibold text-white">Parkster</span>
+      </a>
+      <a href="#" class="glass-panel p-4 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-transform">
+        <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs">AP</div>
+        <span class="font-semibold text-white">Aimo Park</span>
+      </a>
+      <a href="#" class="glass-panel p-4 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-transform">
+        <div class="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-xs">EP</div>
+        <span class="font-semibold text-white">EasyPark</span>
+      </a>
+      <a href="#" class="glass-panel p-4 rounded-2xl flex items-center gap-3 active:scale-[0.98] transition-transform">
+        <div class="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center text-white font-bold text-xs">MB</div>
+        <span class="font-semibold text-white">Mobill</span>
+      </a>
+    </div>
+
+    <!-- Map/Zone Section Placeholder -->
+    <h3 class="text-sm font-semibold text-textMuted uppercase tracking-wider mb-4">Område</h3>
+    <div class="glass-panel p-4 rounded-3xl w-full h-32 flex items-center justify-center relative overflow-hidden">
+       <!-- Fake map background -->
+       <div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(circle at center, #3b82f6 1px, transparent 1px); background-size: 20px 20px;"></div>
+       <div class="z-10 flex flex-col items-center">
+         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary mb-2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+         <span class="text-white font-medium text-sm">Zon laddas efter scanning...</span>
+       </div>
+    </div>
+  </main>
+
+  <!-- View: Scanning Overlay -->
+  <main id="view-scanning" class="flex-1 flex flex-col relative px-6 pb-24 hidden">
+    <div class="flex-1 relative rounded-3xl overflow-hidden border border-border bg-surface flex flex-col items-center justify-center group shadow-2xl">
+      <img id="image-preview" class="absolute inset-0 w-full h-full object-cover" />
+      <div class="absolute inset-0 bg-background/60 z-20 backdrop-blur-sm">
+        <div class="scanner-line"></div>
+        <div class="absolute inset-0 flex flex-col items-center justify-center">
+          <div class="w-16 h-16 rounded-full border-4 border-primary border-t-transparent animate-spin mb-4"></div>
+          <p class="text-white font-bold text-lg tracking-wide">AI Analyserar...</p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- View: Result -->
+  <main id="view-result" class="flex-1 flex flex-col relative px-6 pb-8 hidden">
+    <div class="flex-1 flex flex-col items-center justify-center pb-4 text-center animate-fade-in">
+      
+      <!-- Big Status Indicator -->
+      <div id="status-icon-large" class="w-32 h-32 rounded-full bg-success/20 text-success flex items-center justify-center mb-6 shadow-[0_0_40px_rgba(34,197,94,0.3)] transition-all duration-500 transform scale-0" style="animation: scaleIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards 0.2s;">
+        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+
+      <h2 id="result-title" class="text-3xl font-extrabold text-white mb-2 tracking-tight opacity-0" style="animation: slideUp 0.5s ease forwards 0.4s;">Tillåtet att parkera</h2>
+      <p id="result-subtitle" class="text-lg text-success font-medium mb-10 opacity-0" style="animation: slideUp 0.5s ease forwards 0.5s;">Fram till kl 18:00</p>
+
+      <!-- Essential Data Grid -->
+      <div class="grid grid-cols-2 gap-4 w-full max-w-sm opacity-0" style="animation: slideUp 0.5s ease forwards 0.6s;">
+        <div class="glass-panel p-4 rounded-3xl flex flex-col items-center justify-center border border-white/5">
+          <span class="text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">Maxtid</span>
+          <span id="res-maxtime" class="text-2xl font-black text-white">2h</span>
+        </div>
+        <div class="glass-panel p-4 rounded-3xl flex flex-col items-center justify-center border border-white/5">
+          <span class="text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">Avgift</span>
+          <span id="res-fee" class="text-2xl font-black text-white">Ja</span>
+        </div>
+        <div class="glass-panel p-4 rounded-3xl flex flex-col items-center justify-center border border-white/5">
+          <span class="text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">Zon</span>
+          <span id="res-zone" class="text-2xl font-black text-white">1234</span>
+        </div>
+        <div class="glass-panel p-4 rounded-3xl flex flex-col items-center justify-center text-center border border-white/5">
+          <span class="text-textMuted text-[10px] font-bold uppercase tracking-widest mb-1">Krav</span>
+          <span id="res-special" class="text-lg font-bold text-white leading-tight">P-skiva</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="flex gap-3 mt-auto pt-6">
+      <button id="btn-back" class="w-full py-4 rounded-2xl bg-surface border border-border text-white font-semibold text-center active:scale-[0.98] transition-transform">
+        Scanna ny skylt
+      </button>
+    </div>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav class="absolute bottom-0 left-0 w-full h-20 glass-panel border-t border-border flex items-center justify-around px-2 pb-safe z-50">
+    <button class="flex flex-col items-center justify-center w-16 h-12 text-primary">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+      <span class="text-[10px] font-bold mt-1">Hem</span>
+    </button>
+    <button class="flex flex-col items-center justify-center w-16 h-12 text-textMuted hover:text-white transition-colors">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+      <span class="text-[10px] font-semibold mt-1">Karta</span>
+    </button>
+    <button class="flex flex-col items-center justify-center w-16 h-12 text-textMuted hover:text-white transition-colors">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+      <span class="text-[10px] font-semibold mt-1">Historik</span>
+    </button>
+  </nav>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
