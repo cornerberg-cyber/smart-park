@@ -1,0 +1,17 @@
+{
+  "name": "Smart Park",
+  "short_name": "Smart Park",
+  "description": "AI-driven parkeringsassistent som tolkar skyltar",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "/icons.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
