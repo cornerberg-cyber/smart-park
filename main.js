@@ -39,6 +39,7 @@ const apiKey = 'AIzaSyDFSWIiO2_gxz42TFXZIq8AiPxXPdDn40M';
 
 // --- Initialization ---
 function init() {
+  preloadParkingData();
   requestGPS();
   setupNavigation();
 }
@@ -229,113 +230,116 @@ function initMap() {
     fetchStreetParking(center.lat, center.lng);
   });
 }
-// Markers storage
+// Global data cache
+let cachedParkingData = null;
 let parkingMarkers = [];
 
-// Fetch parking data from Stockholm Parkering API
-async function fetchParkingData(lat, lng) {
-  if (!map) return;
-
+// Load data once at startup
+async function preloadParkingData() {
   try {
-    console.log("Hämtar data från Stockholm Parkering...");
+    const response = await fetch('/api_response.json');
+    cachedParkingData = await response.json();
+    console.log(`Laddat in ${cachedParkingData.length} parkeringar i minnet.`);
     
-    // Try fetching from real API first
-    let response;
-    let allData;
+    // Trigger initial fetch if map is ready
+    if (map) {
+      const center = map.getCenter();
+      fetchParkingData(center.lat, center.lng);
+    }
+  } catch (err) {
+    console.error("Kunde inte ladda in p-data i minnet:", err);
+  }
+}
+
+// Fetch parking data from cache
+function fetchParkingData(lat, lng) {
+  if (!map || !cachedParkingData) return;
+
+  // Clear existing markers
+  parkingMarkers.forEach(marker => map.removeLayer(marker));
+  parkingMarkers = [];
+
+  // Filter markers in memory (fast!)
+  const radiusKm = 1.0;
+  const nearParking = cachedParkingData.filter(p => {
+    if (!p.AdressLatitud || !p.AdressLongitud) return false;
+    const dist = getDistance(lat, lng, p.AdressLatitud, p.AdressLongitud);
+    return dist <= radiusKm;
+  });
+
+  nearParking.forEach(p => {
+    const isGarage = p.Anlaggningstyp === "Garage";
+    const color = isGarage ? '#8B5CF6' : '#10B981'; 
     
-    try {
-        response = await fetch('https://api.stockholmparkering.se:8084/SparkInfartsParkeringService.svc/GetAllAnlaggningParkeringsInfo');
-        if (!response.ok) throw new Error("API responded with error");
-        allData = await response.json();
-        console.log("Hämtade realtidsdata!");
-    } catch (apiError) {
-        console.warn("CORS/Nätverksfel. Försöker hämta från reservfil...");
-        // Fallback to local file in public folder
-        response = await fetch('/api_response.json');
-        allData = await response.json();
-        console.log("Använder reservdata från fil.");
+    // Clean up prices - avoid duplicates and messy overlap
+    let uniquePrices = [];
+    if (p.BesokstaxaCollection) {
+        // Group by price to show "Standard: X kr"
+        const seen = new Set();
+        p.BesokstaxaCollection.forEach(t => {
+            const key = `${t.Taxa}-${t.Galler}`;
+            if (!seen.has(key) && uniquePrices.length < 3) {
+                uniquePrices.push(t);
+                seen.add(key);
+            }
+        });
     }
 
-    // Clear existing markers
-    parkingMarkers.forEach(marker => map.removeLayer(marker));
-    parkingMarkers = [];
+    let priceHtml = uniquePrices.map(t => 
+      `<div class="flex justify-between items-center py-1 border-b border-white/5 last:border-0">
+        <span class="text-[10px] text-slate-400 font-medium">${t.Galler}</span>
+        <span class="text-sm font-bold text-white">${t.Taxa} ${p.Tidsenhet || 'kr/h'}</span>
+      </div>`
+    ).join('') || '<div class="text-xs italic text-slate-500 py-2">Prisinfo saknas</div>';
 
-    // Filter and show markers (only within ~1.5km of the point for performance)
-    const radiusKm = 1.5;
-    const nearParking = allData.filter(p => {
-      if (!p.AdressLatitud || !p.AdressLongitud) return false;
-      const dist = getDistance(lat, lng, p.AdressLatitud, p.AdressLongitud);
-      return dist <= radiusKm;
-    });
-
-    nearParking.forEach(p => {
-      const isGarage = p.Anlaggningstyp === "Garage";
-      // Purple for garage, Teal for surface parking
-      const color = isGarage ? '#A78BFA' : '#34D399'; 
-      
-      // Build price info strings
-      let priceInfo = "";
-      if (p.BesokstaxaCollection && p.BesokstaxaCollection.length > 0) {
-        priceInfo = p.BesokstaxaCollection.map(t => 
-          `<div class="flex justify-between gap-4 text-[11px] mb-1">
-            <span class="text-textMuted">${t.Galler}</span>
-            <span class="font-bold text-white">${t.Taxa} ${p.Tidsenhet || 'kr'}</span>
-          </div>`
-        ).join('');
-      } else {
-        priceInfo = '<div class="text-[11px] italic text-textMuted text-center">Besöksinfo saknas</div>';
-      }
-
-      // Create a premium looking popup
-      const popupContent = `
-        <div class="glass-panel p-3 border border-white/10" style="min-width: 180px; background: rgba(15, 23, 42, 0.95);">
-          <div class="flex justify-between items-start mb-2">
-            <h3 class="text-sm font-bold text-white m-0 leading-tight">${p.Name}</h3>
-            <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70">${isGarage ? 'Garage' : 'Yta'}</span>
+    const popupContent = `
+      <div class="p-4 bg-slate-900 rounded-3xl" style="min-width: 220px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex-1">
+            <h3 class="text-white font-bold text-base leading-tight mb-1">${p.Name}</h3>
+            <p class="text-slate-400 text-[11px]">${p.Adress || 'Stockholm'}</p>
           </div>
-          <p class="text-[11px] text-textMuted mb-3">${p.Adress}</p>
-          
-          <div class="space-y-1 mb-3">
-            ${priceInfo}
+          <div class="px-2 py-1 rounded-lg bg-white/10 text-[10px] font-bold text-white uppercase tracking-wider">
+            ${isGarage ? 'Garage' : 'Yta'}
           </div>
-
-          ${p.AntalLaddplatserBesokBil > 0 ? `
-            <div class="flex items-center gap-2 mb-3 px-2 py-1 bg-primary/20 rounded-md border border-primary/30">
-              <span class="text-xs">⚡</span>
-              <span class="text-[11px] font-bold text-primary">${p.AntalLaddplatserBesokBil} laddplatser</span>
-            </div>
-          ` : ''}
-
-          <button onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${p.AdressLatitud},${p.AdressLongitud}')" 
-                  class="w-full py-2 bg-primary text-white text-[11px] font-bold rounded-lg active:scale-95 transition-all shadow-lg shadow-primary/20">
-            NAVIGERA HIT
-          </button>
         </div>
-      `;
+        
+        <div class="bg-white/5 rounded-2xl p-3 mb-4">
+          <div class="text-[9px] uppercase tracking-widest text-primary font-bold mb-2">Taxa & Öppettider</div>
+          ${priceHtml}
+        </div>
 
-      const marker = L.circleMarker([p.AdressLatitud, p.AdressLongitud], {
-        radius: 12,
-        fillColor: color,
-        color: "#fff",
-        weight: 3,
-        opacity: 0.5,
-        fillOpacity: 0.9
-      }).addTo(map);
+        ${p.AntalLaddplatserBesokBil > 0 ? `
+          <div class="flex items-center gap-2 mb-4 p-2 bg-blue-500/10 border border-blue-500/20 rounded-xl">
+            <span class="text-sm">⚡</span>
+            <span class="text-[11px] font-bold text-blue-400">${p.AntalLaddplatserBesokBil} laddplatser tillgängliga</span>
+          </div>
+        ` : ''}
 
-      // Custom Leaflet popup style via CSS classes
-      marker.bindPopup(popupContent, {
-        className: 'custom-popup',
-        maxWidth: 250
-      });
-      
-      parkingMarkers.push(marker);
+        <button onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${p.AdressLatitud},${p.AdressLongitud}')" 
+                class="w-full py-3 bg-primary text-white text-xs font-bold rounded-2xl active:scale-[0.97] transition-all shadow-lg shadow-primary/30">
+          STARTA NAVIGERING
+        </button>
+      </div>
+    `;
+
+    const marker = L.circleMarker([p.AdressLatitud, p.AdressLongitud], {
+      radius: 12,
+      fillColor: color,
+      color: "#fff",
+      weight: 3,
+      opacity: 0.6,
+      fillOpacity: 0.9
+    }).addTo(map);
+
+    marker.bindPopup(popupContent, {
+      className: 'custom-popup',
+      maxWidth: 280,
+      closeButton: false
     });
-
-    console.log(`Hittade ${nearParking.length} parkeringar från Stockholm Parkering i närheten.`);
-  } catch (error) {
-    console.error("Kunde inte hämta data från Stockholm Parkering:", error);
-    // Silent fail for user
-  }
+    
+    parkingMarkers.push(marker);
+  });
 }
 
 // Helper: Calculate distance in km (Haversine formula)
