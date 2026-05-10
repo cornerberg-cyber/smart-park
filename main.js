@@ -85,6 +85,7 @@ async function searchAddress(query) {
       console.log("Adress hittad:", newLat, newLng);
       map.setView([newLat, newLng], 16);
       fetchParkingData(newLat, newLng);
+      fetchStreetParking(newLat, newLng);
     } else {
       alert("Hittade inte adressen. Prova att lägga till stad, t.ex. 'Gatan 1, Stockholm'.");
     }
@@ -217,62 +218,169 @@ function initMap() {
     fillOpacity: 1
   }).addTo(map);
 
-  // Fetch real parking data
+  // Fetch all types of parking data
   fetchParkingData(lat, lng);
+  fetchStreetParking(lat, lng);
 
   // Re-fetch data when map is moved manually
   map.on('moveend', () => {
     const center = map.getCenter();
     fetchParkingData(center.lat, center.lng);
+    fetchStreetParking(center.lat, center.lng);
   });
 }
+// Markers storage
+let parkingMarkers = [];
 
+// Fetch parking data from Stockholm Parkering API
 async function fetchParkingData(lat, lng) {
-  if (!parkingLayer) return;
-  console.log("Hämtar parkeringar för:", lat, lng);
-  
-  // Overpass API Query: Broader search including areas and more tags
-  const query = `[out:json];(node["amenity"="parking"](around:1000,${lat},${lng});way["amenity"="parking"](around:1000,${lat},${lng});relation["amenity"="parking"](around:1000,${lat},${lng}););out center;`;
-  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+  if (!map) return;
 
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("API-fel");
-    const data = await response.json();
+    console.log("Hämtar data från Stockholm Parkering...");
     
-    parkingLayer.clearLayers();
-    console.log("Antal parkeringar funna:", data.elements.length);
+    // Using the GetAllAnlaggningParkeringsInfo endpoint
+    const response = await fetch('https://api.stockholmparkering.se:8084/SparkInfartsParkeringService.svc/GetAllAnlaggningParkeringsInfo');
+    const allData = await response.json();
 
-    if (data.elements.length === 0) {
-       return;
-    }
+    // Clear existing markers
+    parkingMarkers.forEach(marker => map.removeLayer(marker));
+    parkingMarkers = [];
 
-    data.elements.forEach(el => {
-      const pLat = el.lat || el.center.lat;
-      const pLng = el.lon || el.center.lon;
-      const tags = el.tags || {};
-      const name = tags.name || tags.operator || "Parkering";
-      const parkingType = tags.parking || "Gata/Yta";
-      const fee = tags.fee === "yes" ? "Avgift" : tags.fee === "no" ? "Gratis" : "Info saknas";
-
-      L.circle([pLat, pLng], {
-        color: tags.fee === "yes" ? '#ef4444' : tags.fee === "no" ? '#22c55e' : '#3b82f6',
-        fillColor: tags.fee === "yes" ? '#ef4444' : tags.fee === "no" ? '#22c55e' : '#3b82f6',
-        fillOpacity: 0.5,
-        radius: 20
-      }).addTo(parkingLayer).bindPopup(`
-        <div class="p-1 min-w-[120px]">
-          <b class="text-sm block mb-1 text-white">${name}</b>
-          <div class="text-[11px] space-y-1 text-textMuted">
-            <p>Typ: <span class="text-white">${parkingType}</span></p>
-            <p>Avgift: <span class="font-bold ${tags.fee === 'no' ? 'text-green-400' : 'text-red-400'}">${fee}</span></p>
-          </div>
-        </div>
-      `);
+    // Filter and show markers (only within ~1.5km of the point for performance)
+    const radiusKm = 1.5;
+    const nearParking = allData.filter(p => {
+      if (!p.AdressLatitud || !p.AdressLongitud) return false;
+      const dist = getDistance(lat, lng, p.AdressLatitud, p.AdressLongitud);
+      return dist <= radiusKm;
     });
+
+    nearParking.forEach(p => {
+      const isGarage = p.Anlaggningstyp === "Garage";
+      // Purple for garage, Teal for surface parking
+      const color = isGarage ? '#A78BFA' : '#34D399'; 
+      
+      // Build price info strings
+      let priceInfo = "";
+      if (p.BesokstaxaCollection && p.BesokstaxaCollection.length > 0) {
+        priceInfo = p.BesokstaxaCollection.map(t => 
+          `<div class="flex justify-between gap-4 text-[11px] mb-1">
+            <span class="text-textMuted">${t.Galler}</span>
+            <span class="font-bold text-white">${t.Taxa} ${p.Tidsenhet || 'kr'}</span>
+          </div>`
+        ).join('');
+      } else {
+        priceInfo = '<div class="text-[11px] italic text-textMuted text-center">Besöksinfo saknas</div>';
+      }
+
+      // Create a premium looking popup
+      const popupContent = `
+        <div class="glass-panel p-3 border border-white/10" style="min-width: 180px; background: rgba(15, 23, 42, 0.95);">
+          <div class="flex justify-between items-start mb-2">
+            <h3 class="text-sm font-bold text-white m-0 leading-tight">${p.Name}</h3>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-white/70">${isGarage ? 'Garage' : 'Yta'}</span>
+          </div>
+          <p class="text-[11px] text-textMuted mb-3">${p.Adress}</p>
+          
+          <div class="space-y-1 mb-3">
+            ${priceInfo}
+          </div>
+
+          ${p.AntalLaddplatserBesokBil > 0 ? `
+            <div class="flex items-center gap-2 mb-3 px-2 py-1 bg-primary/20 rounded-md border border-primary/30">
+              <span class="text-xs">⚡</span>
+              <span class="text-[11px] font-bold text-primary">${p.AntalLaddplatserBesokBil} laddplatser</span>
+            </div>
+          ` : ''}
+
+          <button onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${p.AdressLatitud},${p.AdressLongitud}')" 
+                  class="w-full py-2 bg-primary text-white text-[11px] font-bold rounded-lg active:scale-95 transition-all shadow-lg shadow-primary/20">
+            NAVIGERA HIT
+          </button>
+        </div>
+      `;
+
+      const marker = L.circleMarker([p.AdressLatitud, p.AdressLongitud], {
+        radius: 12,
+        fillColor: color,
+        color: "#fff",
+        weight: 3,
+        opacity: 0.5,
+        fillOpacity: 0.9
+      }).addTo(map);
+
+      // Custom Leaflet popup style via CSS classes
+      marker.bindPopup(popupContent, {
+        className: 'custom-popup',
+        maxWidth: 250
+      });
+      
+      parkingMarkers.push(marker);
+    });
+
+    console.log(`Hittade ${nearParking.length} parkeringar från Stockholm Parkering i närheten.`);
   } catch (error) {
-    console.error("Kunde inte hämta parkeringsdata:", error);
+    console.error("Kunde inte hämta data från Stockholm Parkering:", error);
+    // Silent fail for user
   }
+}
+
+// Helper: Calculate distance in km (Haversine formula)
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Fetch street parking (cleaning days / zones) from Stockholm City (Trafikkontoret)
+async function fetchStreetParking(lat, lng) {
+    if (!map) return;
+    
+    // We use a bbox (bounding box) around the user to limit data
+    const offset = 0.005; // ~500m
+    const bbox = `${lng-offset},${lat-offset},${lng+offset},${lat+offset}`;
+    
+    // URL to Stockholm City Open Data WFS (GeoJSON format)
+    const url = `https://openstreetgs.stockholm.se/geoservice/wfs?service=wfs&version=1.1.0&request=GetFeature&typeName=tk:Servicetider&outputFormat=json&srsName=EPSG:4326&bbox=${bbox},EPSG:4326`;
+
+    try {
+        console.log("Hämtar gatuparkering (städdagar)...");
+        const response = await fetch(url);
+        const data = await response.json();
+
+        // Display street segments as lines
+        if (data.features) {
+            data.features.forEach(feature => {
+                const coords = feature.geometry.coordinates.map(c => [c[1], c[0]]);
+                const props = feature.properties;
+                
+                // Show blue lines for street parking
+                const polyline = L.polyline(coords, {
+                    color: '#3B82F6',
+                    weight: 5,
+                    opacity: 0.6
+                }).addTo(map);
+
+                polyline.bindPopup(`
+                    <div class="p-2 text-slate-900">
+                        <div class="font-bold mb-1 border-b pb-1">Gatuparkering</div>
+                        <div class="text-xs mb-1"><b>Städdag:</b> ${props.STÄDDAG || 'Okänd'}</div>
+                        <div class="text-xs mb-1"><b>Tid:</b> ${props.TID || 'Hela dygnet'}</div>
+                        <div class="text-xs opacity-70">Zon: ${props.TAXEOMRÅDE || 'Okänd'}</div>
+                    </div>
+                `);
+                
+                parkingMarkers.push(polyline);
+            });
+        }
+    } catch (error) {
+        console.error("Kunde inte hämta gatuparkering:", error);
+    }
 }
 
 btnBack.addEventListener('click', showDashboardView);
