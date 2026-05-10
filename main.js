@@ -22,7 +22,8 @@ const allViews = [viewDashboard, viewScanning, viewResult, viewMap];
 const navBtns = [navHome, navMap, navHistory];
 
 // Search Element
-const mapSearchInput = document.querySelector('#view-map input');
+const mapSearchInput = document.getElementById('map-search-input');
+const mapSearchBtn = document.getElementById('map-search-btn');
 
 // Map State
 let map = null;
@@ -60,24 +61,36 @@ function setupNavigation() {
       }
     });
   }
+  if (mapSearchBtn) {
+    mapSearchBtn.addEventListener('click', () => {
+      searchAddress(mapSearchInput.value);
+    });
+  }
 }
 
 async function searchAddress(query) {
   if (!query) return;
+  console.log("Söker efter:", query);
   try {
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent': 'SmartParkApp/1.0'
+      }
+    });
     const data = await response.json();
     if (data && data.length > 0) {
       const { lat, lon } = data[0];
       const newLat = parseFloat(lat);
       const newLng = parseFloat(lon);
+      console.log("Adress hittad:", newLat, newLng);
       map.setView([newLat, newLng], 16);
       fetchParkingData(newLat, newLng);
     } else {
-      alert("Hittade inte adressen.");
+      alert("Hittade inte adressen. Prova att lägga till stad, t.ex. 'Gatan 1, Stockholm'.");
     }
   } catch (error) {
     console.error("Sökfel:", error);
+    alert("Kunde inte söka just nu. Kontrollera din internetuppkoppling.");
   }
 }
 
@@ -216,47 +229,49 @@ function initMap() {
 
 async function fetchParkingData(lat, lng) {
   if (!parkingLayer) return;
+  console.log("Hämtar parkeringar för:", lat, lng);
   
-  // Overpass API Query: Get all parking within 800m (larger radius)
-  const query = `[out:json];(node["amenity"="parking"](around:800,${lat},${lng});way["amenity"="parking"](around:800,${lat},${lng}););out center;`;
+  // Overpass API Query: Broader search including areas and more tags
+  const query = `[out:json];(node["amenity"="parking"](around:1000,${lat},${lng});way["amenity"="parking"](around:1000,${lat},${lng});relation["amenity"="parking"](around:1000,${lat},${lng}););out center;`;
   const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
   try {
     const response = await fetch(url);
+    if (!response.ok) throw new Error("API-fel");
     const data = await response.json();
     
-    // Clear old data
     parkingLayer.clearLayers();
+    console.log("Antal parkeringar funna:", data.elements.length);
 
     if (data.elements.length === 0) {
-       console.log("Inga parkeringar hittades i detta område.");
        return;
     }
 
     data.elements.forEach(el => {
       const pLat = el.lat || el.center.lat;
       const pLng = el.lon || el.center.lon;
-      const name = el.tags.name || el.tags.operator || "Parkering";
-      const parkingType = el.tags.parking || "Gata/Yta";
-      const fee = el.tags.fee === "yes" ? "Avgift" : el.tags.fee === "no" ? "Gratis" : "Info saknas";
+      const tags = el.tags || {};
+      const name = tags.name || tags.operator || "Parkering";
+      const parkingType = tags.parking || "Gata/Yta";
+      const fee = tags.fee === "yes" ? "Avgift" : tags.fee === "no" ? "Gratis" : "Info saknas";
 
       L.circle([pLat, pLng], {
-        color: el.tags.fee === "yes" ? '#ef4444' : el.tags.fee === "no" ? '#22c55e' : '#3b82f6',
-        fillColor: el.tags.fee === "yes" ? '#ef4444' : el.tags.fee === "no" ? '#22c55e' : '#3b82f6',
-        fillOpacity: 0.4,
-        radius: 25
+        color: tags.fee === "yes" ? '#ef4444' : tags.fee === "no" ? '#22c55e' : '#3b82f6',
+        fillColor: tags.fee === "yes" ? '#ef4444' : tags.fee === "no" ? '#22c55e' : '#3b82f6',
+        fillOpacity: 0.5,
+        radius: 20
       }).addTo(parkingLayer).bindPopup(`
         <div class="p-1 min-w-[120px]">
-          <b class="text-sm block mb-1">${name}</b>
-          <div class="text-[11px] space-y-1">
-            <p>Type: <span class="text-white">${parkingType}</span></p>
-            <p>Fee: <span class="font-bold ${el.tags.fee === 'no' ? 'text-green-400' : 'text-red-400'}">${fee}</span></p>
+          <b class="text-sm block mb-1 text-white">${name}</b>
+          <div class="text-[11px] space-y-1 text-textMuted">
+            <p>Typ: <span class="text-white">${parkingType}</span></p>
+            <p>Avgift: <span class="font-bold ${tags.fee === 'no' ? 'text-green-400' : 'text-red-400'}">${fee}</span></p>
           </div>
         </div>
       `);
     });
   } catch (error) {
-    console.error("Kunde inte hämta parkeringsdata", error);
+    console.error("Kunde inte hämta parkeringsdata:", error);
   }
 }
 
