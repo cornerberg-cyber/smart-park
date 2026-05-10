@@ -239,9 +239,20 @@ async function fetchParkingData(lat, lng) {
   try {
     console.log("Hämtar data från Stockholm Parkering...");
     
-    // Using the GetAllAnlaggningParkeringsInfo endpoint
-    const response = await fetch('https://api.stockholmparkering.se:8084/SparkInfartsParkeringService.svc/GetAllAnlaggningParkeringsInfo');
-    const allData = await response.json();
+    // Try fetching from real API first
+    let response;
+    let allData;
+    
+    try {
+        response = await fetch('https://api.stockholmparkering.se:8084/SparkInfartsParkeringService.svc/GetAllAnlaggningParkeringsInfo');
+        if (!response.ok) throw new Error("API responded with error");
+        allData = await response.json();
+    } catch (apiError) {
+        console.warn("Kunde inte hämta realtidsdata (CORS eller nätverksfel). Använder lokal reservdata...", apiError);
+        // Fallback to local file
+        response = await fetch('./api_response.json');
+        allData = await response.json();
+    }
 
     // Clear existing markers
     parkingMarkers.forEach(marker => map.removeLayer(marker));
@@ -346,7 +357,8 @@ async function fetchStreetParking(lat, lng) {
     const bbox = `${lng-offset},${lat-offset},${lng+offset},${lat+offset}`;
     
     // URL to Stockholm City Open Data WFS (GeoJSON format)
-    const url = `https://openstreetgs.stockholm.se/geoservice/wfs?service=wfs&version=1.1.0&request=GetFeature&typeName=tk:Servicetider&outputFormat=json&srsName=EPSG:4326&bbox=${bbox},EPSG:4326`;
+    // We try 'tk:Parkeringsplatser_Servicetider' which is a more stable layer for this info
+    const url = `https://openstreetgs.stockholm.se/geoservice/wfs?service=wfs&version=1.1.0&request=GetFeature&typeName=tk:Parkeringsplatser_Servicetider&maxFeatures=50&outputFormat=json&srsName=EPSG:4326&bbox=${bbox},EPSG:4326`;
 
     try {
         console.log("Hämtar gatuparkering (städdagar)...");
