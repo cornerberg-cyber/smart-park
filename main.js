@@ -247,11 +247,13 @@ async function fetchParkingData(lat, lng) {
         response = await fetch('https://api.stockholmparkering.se:8084/SparkInfartsParkeringService.svc/GetAllAnlaggningParkeringsInfo');
         if (!response.ok) throw new Error("API responded with error");
         allData = await response.json();
+        console.log("Hämtade realtidsdata!");
     } catch (apiError) {
-        console.warn("Kunde inte hämta realtidsdata (CORS eller nätverksfel). Använder lokal reservdata...", apiError);
-        // Fallback to local file
-        response = await fetch('./api_response.json');
+        console.warn("CORS/Nätverksfel. Försöker hämta från reservfil...");
+        // Fallback to local file in public folder
+        response = await fetch('/api_response.json');
         allData = await response.json();
+        console.log("Använder reservdata från fil.");
     }
 
     // Clear existing markers
