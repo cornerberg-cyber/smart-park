@@ -171,34 +171,42 @@ function initMap() {
     fillOpacity: 1
   }).addTo(map);
 
-  // Add Mock Parking Zones
-  addMockZones(lat, lng);
+  // Fetch real parking data
+  fetchParkingData(lat, lng);
 }
 
-function addMockZones(lat, lng) {
-  // Zone 1: Green (Cheap)
-  L.circle([lat + 0.002, lng + 0.002], {
-    color: '#22c55e',
-    fillColor: '#22c55e',
-    fillOpacity: 0.2,
-    radius: 150
-  }).addTo(map).bindPopup("<b>Zon A</b><br>10kr/tim");
+async function fetchParkingData(lat, lng) {
+  // Overpass API Query: Get all parking within 500m
+  const query = `[out:json];(node["amenity"="parking"](around:500,${lat},${lng});way["amenity"="parking"](around:500,${lat},${lng}););out center;`;
+  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
-  // Zone 2: Blue (Medium)
-  L.circle([lat - 0.003, lng - 0.001], {
-    color: '#3b82f6',
-    fillColor: '#3b82f6',
-    fillOpacity: 0.2,
-    radius: 200
-  }).addTo(map).bindPopup("<b>Zon B</b><br>25kr/tim");
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    data.elements.forEach(el => {
+      const pLat = el.lat || el.center.lat;
+      const pLng = el.lon || el.center.lon;
+      const name = el.tags.name || "Parkering";
+      const parkingType = el.tags.parking || "Okänd typ";
+      const fee = el.tags.fee === "yes" ? "Avgift" : el.tags.fee === "no" ? "Gratis" : "Info saknas";
 
-  // Zone 3: Red (Restricted)
-  L.circle([lat + 0.001, lng - 0.004], {
-    color: '#ef4444',
-    fillColor: '#ef4444',
-    fillOpacity: 0.2,
-    radius: 100
-  }).addTo(map).bindPopup("<b>P-Förbud</b><br>Gäller dygnet runt");
+      L.circle([pLat, pLng], {
+        color: el.tags.fee === "yes" ? '#ef4444' : '#22c55e',
+        fillColor: el.tags.fee === "yes" ? '#ef4444' : '#22c55e',
+        fillOpacity: 0.3,
+        radius: 30
+      }).addTo(map).bindPopup(`
+        <div class="p-1">
+          <b class="text-sm">${name}</b><br>
+          <span class="text-xs">Typ: ${parkingType}</span><br>
+          <span class="text-xs font-bold">${fee}</span>
+        </div>
+      `);
+    });
+  } catch (error) {
+    console.error("Kunde inte hämta parkeringsdata", error);
+  }
 }
 
 btnBack.addEventListener('click', showDashboardView);
