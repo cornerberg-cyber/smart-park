@@ -223,6 +223,21 @@ function populateResult(res) {
   document.getElementById('res-special').textContent = res.special;
 }
 
+// Smart App Launcher
+window.openApp = function(scheme, fallbackUrl) {
+  const start = Date.now();
+  
+  // Försök öppna app-schemat
+  window.location.href = scheme;
+  
+  // Om vi fortfarande är kvar i webbläsaren efter 1.5 sekunder, öppna fallback
+  setTimeout(() => {
+    if (Date.now() - start < 2000) {
+      window.open(fallbackUrl, '_blank');
+    }
+  }, 1500);
+};
+
 // Start
 init();
 
