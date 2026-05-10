@@ -13,6 +13,18 @@ const btnBack = document.getElementById('btn-back');
 const gpsStatusDot = document.getElementById('gps-status-dot');
 const gpsLocationText = document.getElementById('gps-location-text');
 
+// Navigation Elements
+const navHome = document.getElementById('nav-home');
+const navMap = document.getElementById('nav-map');
+const navHistory = document.getElementById('nav-history');
+const viewMap = document.getElementById('view-map');
+const allViews = [viewDashboard, viewScanning, viewResult, viewMap];
+const navBtns = [navHome, navMap, navHistory];
+
+// Map State
+let map = null;
+let userMarker = null;
+
 // State
 let currentPosition = null;
 let currentImageDataUrl = null;
@@ -23,6 +35,41 @@ const apiKey = 'AIzaSyDFSWIiO2_gxz42TFXZIq8AiPxXPdDn40M';
 // --- Initialization ---
 function init() {
   requestGPS();
+  setupNavigation();
+}
+
+function setupNavigation() {
+  navHome.addEventListener('click', () => showView('view-dashboard'));
+  navMap.addEventListener('click', () => {
+    showView('view-map');
+    initMap();
+  });
+  navHistory.addEventListener('click', () => {
+    // History not implemented yet, just show placeholder or stay on current
+    alert("Historik kommer snart!");
+  });
+}
+
+function showView(viewId) {
+  allViews.forEach(view => {
+    if (view) view.classList.add('hidden');
+  });
+  const activeView = document.getElementById(viewId);
+  if (activeView) {
+    activeView.classList.remove('hidden');
+    activeView.classList.add('view-enter');
+  }
+  
+  // Update nav button colors
+  navBtns.forEach(btn => {
+    if (btn.id === `nav-${viewId.replace('view-', '')}`) {
+      btn.classList.add('text-primary');
+      btn.classList.remove('text-textMuted');
+    } else {
+      btn.classList.remove('text-primary');
+      btn.classList.add('text-textMuted');
+    }
+  });
 }
 
 // --- GPS Geolocation ---
@@ -60,10 +107,7 @@ function showResultView() {
 }
 
 function showDashboardView() {
-  viewResult.classList.add('hidden');
-  viewScanning.classList.add('hidden');
-  viewDashboard.classList.remove('hidden');
-  viewDashboard.classList.add('view-enter');
+  showView('view-dashboard');
   
   // Reset
   imagePreview.src = '';
@@ -95,6 +139,67 @@ cameraInput.addEventListener('change', (e) => {
   };
   reader.readAsDataURL(file);
 });
+
+// --- Map Logic ---
+function initMap() {
+  if (map) {
+    // Map already initialized, just refresh layout
+    setTimeout(() => map.invalidateSize(), 100);
+    return;
+  }
+
+  // Default to Stockholm if no GPS
+  const lat = currentPosition ? currentPosition.coords.latitude : 59.3293;
+  const lng = currentPosition ? currentPosition.coords.longitude : 18.0686;
+
+  map = L.map('map', {
+    zoomControl: false,
+    attributionControl: false
+  }).setView([lat, lng], 15);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  // Add User Marker
+  userMarker = L.circleMarker([lat, lng], {
+    radius: 8,
+    fillColor: "#3b82f6",
+    color: "#fff",
+    weight: 2,
+    opacity: 1,
+    fillOpacity: 1
+  }).addTo(map);
+
+  // Add Mock Parking Zones
+  addMockZones(lat, lng);
+}
+
+function addMockZones(lat, lng) {
+  // Zone 1: Green (Cheap)
+  L.circle([lat + 0.002, lng + 0.002], {
+    color: '#22c55e',
+    fillColor: '#22c55e',
+    fillOpacity: 0.2,
+    radius: 150
+  }).addTo(map).bindPopup("<b>Zon A</b><br>10kr/tim");
+
+  // Zone 2: Blue (Medium)
+  L.circle([lat - 0.003, lng - 0.001], {
+    color: '#3b82f6',
+    fillColor: '#3b82f6',
+    fillOpacity: 0.2,
+    radius: 200
+  }).addTo(map).bindPopup("<b>Zon B</b><br>25kr/tim");
+
+  // Zone 3: Red (Restricted)
+  L.circle([lat + 0.001, lng - 0.004], {
+    color: '#ef4444',
+    fillColor: '#ef4444',
+    fillOpacity: 0.2,
+    radius: 100
+  }).addTo(map).bindPopup("<b>P-Förbud</b><br>Gäller dygnet runt");
+}
 
 btnBack.addEventListener('click', showDashboardView);
 
