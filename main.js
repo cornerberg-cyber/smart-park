@@ -21,9 +21,13 @@ const viewMap = document.getElementById('view-map');
 const allViews = [viewDashboard, viewScanning, viewResult, viewMap];
 const navBtns = [navHome, navMap, navHistory];
 
+// Search Element
+const mapSearchInput = document.querySelector('#view-map input');
+
 // Map State
 let map = null;
 let userMarker = null;
+let parkingLayer = null;
 
 // State
 let currentPosition = null;
@@ -45,9 +49,36 @@ function setupNavigation() {
     initMap();
   });
   navHistory.addEventListener('click', () => {
-    // History not implemented yet, just show placeholder or stay on current
     alert("Historik kommer snart!");
   });
+
+  // Setup Search
+  if (mapSearchInput) {
+    mapSearchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        searchAddress(e.target.value);
+      }
+    });
+  }
+}
+
+async function searchAddress(query) {
+  if (!query) return;
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+    const data = await response.json();
+    if (data && data.length > 0) {
+      const { lat, lon } = data[0];
+      const newLat = parseFloat(lat);
+      const newLng = parseFloat(lon);
+      map.setView([newLat, newLng], 16);
+      fetchParkingData(newLat, newLng);
+    } else {
+      alert("Hittade inte adressen.");
+    }
+  } catch (error) {
+    console.error("Sökfel:", error);
+  }
 }
 
 function showView(viewId) {
@@ -161,6 +192,8 @@ function initMap() {
     maxZoom: 19
   }).addTo(map);
 
+  parkingLayer = L.layerGroup().addTo(map);
+
   // Add User Marker
   userMarker = L.circleMarker([lat, lng], {
     radius: 8,
@@ -173,34 +206,52 @@ function initMap() {
 
   // Fetch real parking data
   fetchParkingData(lat, lng);
+
+  // Re-fetch data when map is moved manually
+  map.on('moveend', () => {
+    const center = map.getCenter();
+    fetchParkingData(center.lat, center.lng);
+  });
 }
 
 async function fetchParkingData(lat, lng) {
-  // Overpass API Query: Get all parking within 500m
-  const query = `[out:json];(node["amenity"="parking"](around:500,${lat},${lng});way["amenity"="parking"](around:500,${lat},${lng}););out center;`;
+  if (!parkingLayer) return;
+  
+  // Overpass API Query: Get all parking within 800m (larger radius)
+  const query = `[out:json];(node["amenity"="parking"](around:800,${lat},${lng});way["amenity"="parking"](around:800,${lat},${lng}););out center;`;
   const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
 
   try {
     const response = await fetch(url);
     const data = await response.json();
     
+    // Clear old data
+    parkingLayer.clearLayers();
+
+    if (data.elements.length === 0) {
+       console.log("Inga parkeringar hittades i detta område.");
+       return;
+    }
+
     data.elements.forEach(el => {
       const pLat = el.lat || el.center.lat;
       const pLng = el.lon || el.center.lon;
-      const name = el.tags.name || "Parkering";
-      const parkingType = el.tags.parking || "Okänd typ";
+      const name = el.tags.name || el.tags.operator || "Parkering";
+      const parkingType = el.tags.parking || "Gata/Yta";
       const fee = el.tags.fee === "yes" ? "Avgift" : el.tags.fee === "no" ? "Gratis" : "Info saknas";
 
       L.circle([pLat, pLng], {
-        color: el.tags.fee === "yes" ? '#ef4444' : '#22c55e',
-        fillColor: el.tags.fee === "yes" ? '#ef4444' : '#22c55e',
-        fillOpacity: 0.3,
-        radius: 30
-      }).addTo(map).bindPopup(`
-        <div class="p-1">
-          <b class="text-sm">${name}</b><br>
-          <span class="text-xs">Typ: ${parkingType}</span><br>
-          <span class="text-xs font-bold">${fee}</span>
+        color: el.tags.fee === "yes" ? '#ef4444' : el.tags.fee === "no" ? '#22c55e' : '#3b82f6',
+        fillColor: el.tags.fee === "yes" ? '#ef4444' : el.tags.fee === "no" ? '#22c55e' : '#3b82f6',
+        fillOpacity: 0.4,
+        radius: 25
+      }).addTo(parkingLayer).bindPopup(`
+        <div class="p-1 min-w-[120px]">
+          <b class="text-sm block mb-1">${name}</b>
+          <div class="text-[11px] space-y-1">
+            <p>Type: <span class="text-white">${parkingType}</span></p>
+            <p>Fee: <span class="font-bold ${el.tags.fee === 'no' ? 'text-green-400' : 'text-red-400'}">${fee}</span></p>
+          </div>
         </div>
       `);
     });
