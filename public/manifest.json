@@ -1,6 +1,6 @@
 {
-  "name": "Smart Park",
-  "short_name": "Smart Park",
+  "name": "Park Smart",
+  "short_name": "Park Smart",
   "description": "AI-driven parkeringsassistent som tolkar skyltar",
   "start_url": "/",
   "display": "standalone",
